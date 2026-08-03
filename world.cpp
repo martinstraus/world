@@ -34,7 +34,7 @@ class Shape {
 
 public:
     virtual ~Shape() = default;
-    virtual void draw(Point<float> location) {
+    virtual void draw(Point<float>) {
         std::cout << "[draw not implemented]\n";
     }
 };
@@ -47,14 +47,22 @@ public:
     Square(Size<float> size) : _size(size) {}
 
     void draw(Point<float> location) override {
-        glClear(GL_COLOR_BUFFER_BIT);
         glColor3f(1, 0, 0);
+    
+        float halfWidth = _size.width() / 2;
+        float halfHeight = _size.height() / 2;
+        
+        glPushMatrix();
+        glTranslatef(location.x(), location.y(), 0.0f);
+
         glBegin(GL_QUADS);
-        glVertex2f(-0.2, -0.2);
-        glVertex2f( 0.2, -0.2);
-        glVertex2f( 0.2,  0.2);
-        glVertex2f(-0.2,  0.2);
+        glVertex2f(-halfWidth, -halfHeight);
+        glVertex2f(halfWidth, -halfHeight);
+        glVertex2f(halfWidth,  halfHeight);
+        glVertex2f(-halfWidth,  halfHeight);
         glEnd();
+
+        glPopMatrix();
     }
 };
 
@@ -103,9 +111,40 @@ public:
 
 };
 
+class Camera {
+private:
+    Point<float> _position;
+    float _zoom;
+
+public:
+    Camera(Point<float> position, float zoom) : _position(position), _zoom(zoom) {}
+
+    void position(Size<float> viewportSize) {
+        float halfWidth  = viewportSize.width() / (2.0f * _zoom);
+        float halfHeight = viewportSize.height() / (2.0f * _zoom);
+
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+
+        glOrtho(
+            _position.x() - halfWidth,
+            _position.x() + halfWidth,
+            _position.y() - halfHeight,
+            _position.y() + halfHeight,
+            -1.0f, 1.0f
+        );
+
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+    }
+};
+
 World* world;
+Camera* camera;
+Size<float> viewportSize = Size<float>(0.0f, 0.0f);
 
 void display() {
+    glClear(GL_COLOR_BUFFER_BIT);
     world->render();
     glutSwapBuffers();
 }
@@ -131,17 +170,20 @@ int main(int argc, char** argv) {
     Unit unit(&square, Point<float>(50.0f, 50.0f));
     world->addUnit(unit);
 
+    viewportSize = Size<float>((float)worldSize.width(), (float)worldSize.height());
+    camera = new Camera(Point<float>(worldSize.width() / 2, worldSize.height() / 2), 1.0f);
     
     glutInitWindowSize(windowSize.width(), windowSize.height());
     glutInitWindowPosition(windowPosition.x(), windowPosition.y());
     glutCreateWindow("World");
 
+    glViewport(0, 0, windowSize.width(), windowSize.height());
+
     glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_EXIT);
 
     glClearColor(0, 0, 0, 1);
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(-1, 1, -1, 1, -1, 1);
+    
+    camera->position(viewportSize);
     glutDisplayFunc(display);
 
     glutMainLoop();
