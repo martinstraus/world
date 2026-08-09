@@ -27,8 +27,9 @@ Run `make clean` to remove the compiled `world` executable.
 ## Current structure
 
 - `Point<T>` and `Size<T>` are basic geometry value types.
-- `Shape` is the drawable base class. `Square` and `Triangle` render red
-  primitives with immediate-mode OpenGL.
+- `Shape` is the drawable base class. `Square`, `Triangle`, and `Circle`
+  render red primitives with immediate-mode OpenGL. `Circle` is a filled
+  triangle fan with 48 segments by default.
 - `Unit` exclusively owns its `Shape` via `std::unique_ptr` together with a
   world location.
 - `World` owns a vector of `Unit` values and renders them.
@@ -36,7 +37,7 @@ Run `make clean` to remove the compiled `world` executable.
   GLUT window is resized.
 
 At startup, the application creates a 1024×768 window and renders a square
-at `(50, 50)` and a triangle at `(200, 50)`.
+at `(50, 50)`, a triangle at `(200, 50)`, and a circle at `(350, 100)`.
 
 ## Maintenance notes
 

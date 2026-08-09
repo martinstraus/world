@@ -101,6 +101,39 @@ public:
     }
 };
 
+class Circle : public Shape {
+private:
+    float _radius;
+    int _segments;
+
+public:
+    Circle(float radius, int segments = 48)
+        : _radius(radius), _segments(segments) {}
+
+    void draw(Point<float> location) override {
+        constexpr float pi = 3.14159265358979323846f;
+
+        glColor3f(1, 0, 0);
+
+        glPushMatrix();
+        glTranslatef(location.x(), location.y(), 0.0f);
+
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex2f(0.0f, 0.0f);
+
+        for (int i = 0; i <= _segments; ++i) {
+            float angle = 2.0f * pi * i / _segments;
+            glVertex2f(
+                _radius * std::cos(angle),
+                _radius * std::sin(angle)
+            );
+        }
+
+        glEnd();
+        glPopMatrix();
+    }
+};
+
 class Unit {
 private:
     std::unique_ptr<Shape> _shape;
@@ -215,6 +248,10 @@ int main(int argc, char** argv) {
     world->addUnit(Unit(
         std::make_unique<Triangle>(10.0f),
         Point<float>(200.0f, 50.0f)
+    ));
+    world->addUnit(Unit(
+        std::make_unique<Circle>(5.0f),
+        Point<float>(350.0f, 100.0f)
     ));
 
     viewportSize = Size<float>((float)worldSize.width(), (float)worldSize.height());
