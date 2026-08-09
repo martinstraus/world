@@ -37,8 +37,9 @@ Run `make clean` to remove the compiled `world` executable.
 - `Camera` configures the orthographic projection and is updated when the
   GLUT window is resized. Hold and drag with the middle mouse button to pan
   the world. The mouse wheel zooms around the camera centre, limited to a
-  range of 0.1× through 10×. Press `C` to recenter the camera on the world
-  while preserving its zoom level.
+  range of 0.1× through 10×. Camera position and zoom interpolate smoothly
+  toward input targets. Press `C` to recenter the camera on the world while
+  preserving its zoom level.
 
 At startup, the application creates a 1024×768 window and renders a square
 at `(50, 50)`, a triangle at `(200, 50)`, and a circle at `(350, 100)`.

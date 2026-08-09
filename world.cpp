@@ -63,6 +63,7 @@ public:
     Square(Size<float> size) : _size(size) {}
 
     void draw(Point<float> location) override {
+        // Define the square around the origin, then translate it to its unit.
         glColor3f(1, 0, 0);
     
         float halfWidth = _size.width() / 2;
@@ -90,6 +91,7 @@ public:
     Triangle(float side) : _side(side) {}
 
     void draw(Point<float> location) override {
+        // Derive the height of an equilateral triangle from its side length.
         float h = std::sqrt(3.0f) * _side * 0.5f;
 
         glColor3f(1, 0, 0);
@@ -124,6 +126,7 @@ public:
         : _radius(radius), _segments(segments) {}
 
     void draw(Point<float> location) override {
+        // A triangle fan joins the center to consecutive edge points.
         constexpr float pi = 3.14159265358979323846f;
 
         glColor3f(1, 0, 0);
@@ -134,6 +137,7 @@ public:
         glBegin(GL_TRIANGLE_FAN);
         glVertex2f(0.0f, 0.0f);
 
+        // Repeat the first edge point at the end to close the fan.
         for (int i = 0; i <= _segments; ++i) {
             float angle = 2.0f * pi * i / _segments;
             glVertex2f(
@@ -157,6 +161,7 @@ public:
         : _shape(std::move(shape)), _location(location) {}
 
     void draw() {
+        // Delegate drawing to the shape stored at this unit's world position.
         this->_shape->draw(this->_location);
     }    
 };
@@ -173,15 +178,19 @@ public:
     ~World();
     Size<int> size() { return this->_size; };
     Point<float> center() {
+        // World coordinates start at the lower-left corner, so half each
+        // dimension gives the center point.
         return Point<float>(
             _size.width() / 2.0f,
             _size.height() / 2.0f
         );
     }
     void addUnit(Unit unit) {
+        // Unit owns a unique_ptr, so it must be moved into the vector.
         _units.push_back(std::move(unit));
     }
     void clear() {
+        // Set the color used by glClear, then erase the previous frame.
         glClearColor(
             _backgroundColor.red(),
             _backgroundColor.green(),
@@ -191,6 +200,7 @@ public:
         glClear(GL_COLOR_BUFFER_BIT);
     }
     void render() {
+        // Units are drawn in insertion order.
         for (Unit& unit : _units) {
             unit.draw();
         } 
@@ -213,39 +223,77 @@ public:
 class Camera {
 private:
     Point<float> _position;
+    Point<float> _targetPosition;
     float _zoom;
+    float _targetZoom;
 
 public:
-    Camera(Point<float> position, float zoom) : _position(position), _zoom(zoom) {}
+    Camera(Point<float> position, float zoom)
+        : _position(position), _targetPosition(position), _zoom(zoom), _targetZoom(zoom) {}
 
     void move(float x, float y) {
-        _position = Point<float>(
-            _position.x() + x,
-            _position.y() + y
+        // Update only the target; update() smoothly moves the visible camera.
+        _targetPosition = Point<float>(
+            _targetPosition.x() + x,
+            _targetPosition.y() + y
         );
     }
 
     void setPosition(Point<float> position) {
-        _position = position;
+        // Used for recentering without snapping the visible camera instantly.
+        _targetPosition = position;
     }
 
     void zoomBy(float factor) {
+        // Store a bounded zoom target to avoid invalid or impractical views.
         constexpr float minimumZoom = 0.1f;
         constexpr float maximumZoom = 10.0f;
 
-        _zoom *= factor;
-        if (_zoom < minimumZoom) {
-            _zoom = minimumZoom;
-        } else if (_zoom > maximumZoom) {
-            _zoom = maximumZoom;
+        _targetZoom *= factor;
+        if (_targetZoom < minimumZoom) {
+            _targetZoom = minimumZoom;
+        } else if (_targetZoom > maximumZoom) {
+            _targetZoom = maximumZoom;
         }
     }
 
     float worldUnitsPerScreenUnit() {
-        return 1.0f / _zoom;
+        // At higher zoom, a screen-pixel drag covers fewer world units.
+        return 1.0f / _targetZoom;
+    }
+
+    bool update(float elapsedSeconds) {
+        // Exponential interpolation gives a frame-rate-independent easing curve.
+        constexpr float smoothingRate = 12.0f;
+        constexpr float positionThreshold = 0.01f;
+        constexpr float zoomThreshold = 0.001f;
+        float blend = 1.0f - std::exp(-smoothingRate * elapsedSeconds);
+
+        float nextX = _position.x() + (_targetPosition.x() - _position.x()) * blend;
+        float nextY = _position.y() + (_targetPosition.y() - _position.y()) * blend;
+        float nextZoom = _zoom + (_targetZoom - _zoom) * blend;
+
+        // Snap very small remainders to their targets so animation can finish.
+        if (std::fabs(_targetPosition.x() - nextX) < positionThreshold) {
+            nextX = _targetPosition.x();
+        }
+        if (std::fabs(_targetPosition.y() - nextY) < positionThreshold) {
+            nextY = _targetPosition.y();
+        }
+        if (std::fabs(_targetZoom - nextZoom) < zoomThreshold) {
+            nextZoom = _targetZoom;
+        }
+
+        bool changed = nextX != _position.x()
+            || nextY != _position.y()
+            || nextZoom != _zoom;
+        _position = Point<float>(nextX, nextY);
+        _zoom = nextZoom;
+        return changed;
     }
 
     void apply(Size<float> viewportSize) {
+        // Convert the camera center and zoom into the visible world rectangle.
         float halfWidth  = viewportSize.width() / (2.0f * _zoom);
         float halfHeight = viewportSize.height() / (2.0f * _zoom);
 
@@ -271,8 +319,10 @@ Size<float> viewportSize = Size<float>(0.0f, 0.0f);
 bool scrollButtonPressed = false;
 int lastMouseX = 0;
 int lastMouseY = 0;
+int lastUpdateTime = 0;
 
 void display() {
+    // Clear the back buffer, draw the world, then present the completed frame.
     world->clear();
     world->render();
     glutSwapBuffers();
@@ -280,6 +330,7 @@ void display() {
 
 void reshape(int w, int h)
 {
+    // GLUT supplies pixel dimensions; keep them for projection and input.
     viewportSize = Size<float>(static_cast<float>(w), static_cast<float>(h));
     glViewport(0, 0, w, h);
     camera->apply(viewportSize);
@@ -287,6 +338,7 @@ void reshape(int w, int h)
 
 void mouseButton(int button, int state, int x, int y) {
     if (button == GLUT_MIDDLE_BUTTON) {
+        // Save the drag origin whenever middle-button state changes.
         scrollButtonPressed = state == GLUT_DOWN;
         lastMouseX = x;
         lastMouseY = y;
@@ -298,6 +350,7 @@ void mouseMotion(int x, int y) {
         return;
     }
 
+    // Screen Y grows downward, hence the reversed signs in the camera delta.
     float worldUnitsPerScreenUnit = camera->worldUnitsPerScreenUnit();
     camera->move(
         (lastMouseX - x) * worldUnitsPerScreenUnit,
@@ -311,6 +364,7 @@ void mouseMotion(int x, int y) {
 }
 
 void mouseWheel(int, int direction, int, int) {
+    // Each wheel notch changes the target zoom by ten percent.
     constexpr float zoomFactor = 1.1f;
 
     if (direction > 0) {
@@ -325,7 +379,30 @@ void mouseWheel(int, int direction, int, int) {
 
 void keyboard(unsigned char key, int, int) {
     if (key == 'c' || key == 'C') {
+        // Recenter by updating the target, allowing the normal easing to run.
         camera->setPosition(world->center());
+        camera->apply(viewportSize);
+        glutPostRedisplay();
+    }
+}
+
+void idle() {
+    // GLUT calls this between events; use elapsed time rather than frame count.
+    int currentTime = glutGet(GLUT_ELAPSED_TIME);
+    if (lastUpdateTime == 0) {
+        lastUpdateTime = currentTime;
+        return;
+    }
+
+    float elapsedSeconds = (currentTime - lastUpdateTime) / 1000.0f;
+    lastUpdateTime = currentTime;
+    // Avoid a large visual jump after the app has been paused or blocked.
+    if (elapsedSeconds > 0.1f) {
+        elapsedSeconds = 0.1f;
+    }
+
+    if (camera->update(elapsedSeconds)) {
+        // Redraw only while the camera is still moving toward a target.
         camera->apply(viewportSize);
         glutPostRedisplay();
     }
@@ -336,9 +413,11 @@ void closeHandler(int) {
 }
 
 int main(int argc, char** argv) {
+    // Initialize GLUT before querying display details or creating a window.
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
 
+    // Center the fixed-size application window on the primary display.
     Size<int> screenSize{glutGet(GLUT_SCREEN_WIDTH), glutGet(GLUT_SCREEN_HEIGHT)};
     Size<int> windowSize{1024, 768};
     Point<float> windowPosition{
@@ -346,6 +425,7 @@ int main(int argc, char** argv) {
         (float)(screenSize.height() - windowSize.height()) / 2
     }; 
 
+    // Populate a small sample world with one unit of each available shape.
     Size<int> worldSize{1024, 768};
     world = new World(worldSize, Color(0.05f, 0.10f, 0.20f));
     world->addUnit(Unit(
@@ -361,6 +441,7 @@ int main(int argc, char** argv) {
         Point<float>(350.0f, 100.0f)
     ));
 
+    // Start with a camera centered over the whole world at 1× zoom.
     viewportSize = Size<float>((float)worldSize.width(), (float)worldSize.height());
     camera = new Camera(
         Point<float>(
@@ -378,6 +459,7 @@ int main(int argc, char** argv) {
 
     glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_EXIT);
 
+    // Register rendering and input callbacks before yielding control to GLUT.
     camera->apply(viewportSize);
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
@@ -385,6 +467,7 @@ int main(int argc, char** argv) {
     glutMotionFunc(mouseMotion);
     glutMouseWheelFunc(mouseWheel);
     glutKeyboardFunc(keyboard);
+    glutIdleFunc(idle);
 
     glutMainLoop();
     return 0;
