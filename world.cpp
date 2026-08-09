@@ -1,6 +1,7 @@
 #include <iostream>
 #include <GL/freeglut.h>
 #include <vector>
+#include <cmath>
 
 // General purpose types
 
@@ -60,6 +61,38 @@ public:
         glVertex2f(halfWidth, -halfHeight);
         glVertex2f(halfWidth,  halfHeight);
         glVertex2f(-halfWidth,  halfHeight);
+        glEnd();
+
+        glPopMatrix();
+    }
+};
+
+class Triangle: public Shape {
+private:
+    float _side; // Size
+
+public:
+    Triangle(float side) : _side(side) {}
+
+    void draw(Point<float> location) override {
+        float h = std::sqrt(3.0f) * _side * 0.5f;
+
+        glColor3f(1, 0, 0);
+        
+        glPushMatrix();
+        glTranslatef(location.x(), location.y(), 0.0f);
+
+        glBegin(GL_TRIANGLES);
+
+        // Top vertex
+        glVertex2f(0.0f,  2.0f * h / 3.0f);
+
+        // Bottom-left
+        glVertex2f(-_side / 2.0f, -h / 3.0f);
+
+        // Bottom-right
+        glVertex2f( _side / 2.0f, -h / 3.0f);
+        
         glEnd();
 
         glPopMatrix();
@@ -149,6 +182,12 @@ void display() {
     glutSwapBuffers();
 }
 
+void reshape(int w, int h)
+{
+    glViewport(0, 0, w, h);
+    camera->position(Size<float>((float)w, (float)h));
+}
+
 void closeHandler(int) {
     glutLeaveMainLoop();
 }
@@ -167,11 +206,21 @@ int main(int argc, char** argv) {
     Size<int> worldSize{1024, 768};
     world = new World(worldSize);
     Square square(Size<float>(10.0f, 10.0f));
-    Unit unit(&square, Point<float>(50.0f, 50.0f));
-    world->addUnit(unit);
+    Unit unit1(&square, Point<float>(50.0f, 50.0f));
+    world->addUnit(unit1);
+
+    Triangle triangle(10.0f);
+    Unit unit2(&triangle, Point<float>(200.0f, 50.0f));
+    world->addUnit(unit2);
 
     viewportSize = Size<float>((float)worldSize.width(), (float)worldSize.height());
-    camera = new Camera(Point<float>(worldSize.width() / 2, worldSize.height() / 2), 1.0f);
+    camera = new Camera(
+        Point<float>(
+            worldSize.width() / 2.0f, 
+            worldSize.height() / 2.0f
+        ), 
+        1.0f
+    );
     
     glutInitWindowSize(windowSize.width(), windowSize.height());
     glutInitWindowPosition(windowPosition.x(), windowPosition.y());
@@ -185,6 +234,7 @@ int main(int argc, char** argv) {
     
     camera->position(viewportSize);
     glutDisplayFunc(display);
+    glutReshapeFunc(reshape);
 
     glutMainLoop();
     return 0;
