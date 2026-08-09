@@ -219,6 +219,22 @@ public:
         );
     }
 
+    void zoomBy(float factor) {
+        constexpr float minimumZoom = 0.1f;
+        constexpr float maximumZoom = 10.0f;
+
+        _zoom *= factor;
+        if (_zoom < minimumZoom) {
+            _zoom = minimumZoom;
+        } else if (_zoom > maximumZoom) {
+            _zoom = maximumZoom;
+        }
+    }
+
+    float worldUnitsPerScreenUnit() {
+        return 1.0f / _zoom;
+    }
+
     void apply(Size<float> viewportSize) {
         float halfWidth  = viewportSize.width() / (2.0f * _zoom);
         float halfHeight = viewportSize.height() / (2.0f * _zoom);
@@ -272,12 +288,26 @@ void mouseMotion(int x, int y) {
         return;
     }
 
+    float worldUnitsPerScreenUnit = camera->worldUnitsPerScreenUnit();
     camera->move(
-        static_cast<float>(lastMouseX - x),
-        static_cast<float>(y - lastMouseY)
+        (lastMouseX - x) * worldUnitsPerScreenUnit,
+        (y - lastMouseY) * worldUnitsPerScreenUnit
     );
     lastMouseX = x;
     lastMouseY = y;
+
+    camera->apply(viewportSize);
+    glutPostRedisplay();
+}
+
+void mouseWheel(int, int direction, int, int) {
+    constexpr float zoomFactor = 1.1f;
+
+    if (direction > 0) {
+        camera->zoomBy(zoomFactor);
+    } else if (direction < 0) {
+        camera->zoomBy(1.0f / zoomFactor);
+    }
 
     camera->apply(viewportSize);
     glutPostRedisplay();
@@ -335,6 +365,7 @@ int main(int argc, char** argv) {
     glutReshapeFunc(reshape);
     glutMouseFunc(mouseButton);
     glutMotionFunc(mouseMotion);
+    glutMouseWheelFunc(mouseWheel);
 
     glutMainLoop();
     return 0;
