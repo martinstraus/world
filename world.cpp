@@ -172,6 +172,12 @@ public:
         : _size(size), _backgroundColor(backgroundColor) { }
     ~World();
     Size<int> size() { return this->_size; };
+    Point<float> center() {
+        return Point<float>(
+            _size.width() / 2.0f,
+            _size.height() / 2.0f
+        );
+    }
     void addUnit(Unit unit) {
         _units.push_back(std::move(unit));
     }
@@ -217,6 +223,10 @@ public:
             _position.x() + x,
             _position.y() + y
         );
+    }
+
+    void setPosition(Point<float> position) {
+        _position = position;
     }
 
     void zoomBy(float factor) {
@@ -313,6 +323,14 @@ void mouseWheel(int, int direction, int, int) {
     glutPostRedisplay();
 }
 
+void keyboard(unsigned char key, int, int) {
+    if (key == 'c' || key == 'C') {
+        camera->setPosition(world->center());
+        camera->apply(viewportSize);
+        glutPostRedisplay();
+    }
+}
+
 void closeHandler(int) {
     glutLeaveMainLoop();
 }
@@ -366,6 +384,7 @@ int main(int argc, char** argv) {
     glutMouseFunc(mouseButton);
     glutMotionFunc(mouseMotion);
     glutMouseWheelFunc(mouseWheel);
+    glutKeyboardFunc(keyboard);
 
     glutMainLoop();
     return 0;
