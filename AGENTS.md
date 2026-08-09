@@ -31,7 +31,7 @@ Run `make clean` to remove the compiled `world` executable.
   render red primitives with immediate-mode OpenGL. `Circle` is a filled
   triangle fan with 48 segments by default.
 - `Unit` exclusively owns its `Shape` via `std::unique_ptr` together with a
-  world location.
+  world location, destination, and movement speed (world units per second).
 - `World` owns a vector of `Unit` values, renders them, and owns the
   configurable background color used to clear the window.
 - `Camera` configures the orthographic projection and is updated when the
@@ -39,7 +39,9 @@ Run `make clean` to remove the compiled `world` executable.
   the world. The mouse wheel zooms around the camera centre, limited to a
   range of 0.1× through 10×. Camera position and zoom interpolate smoothly
   toward input targets. Press `C` to recenter the camera on the world while
-  preserving its zoom level.
+  preserving its zoom level. Left-click a unit to select it; right-click to
+  set its destination. Units animate toward their destinations at their own
+  configured speeds.
 
 At startup, the application creates a 1024×768 window and renders a square
 at `(50, 50)`, a triangle at `(200, 50)`, and a circle at `(350, 100)`.

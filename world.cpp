@@ -53,6 +53,9 @@ public:
     virtual void draw(Point<float>) {
         std::cout << "[draw not implemented]\n";
     }
+    virtual bool contains(Point<float>) {
+        return false;
+    }
 };
 
 class Square : public Shape {
@@ -80,6 +83,11 @@ public:
         glEnd();
 
         glPopMatrix();
+    }
+
+    bool contains(Point<float> point) override {
+        return std::fabs(point.x()) <= _size.width() / 2.0f
+            && std::fabs(point.y()) <= _size.height() / 2.0f;
     }
 };
 
@@ -113,6 +121,19 @@ public:
         glEnd();
 
         glPopMatrix();
+    }
+
+    bool contains(Point<float> point) override {
+        float height = std::sqrt(3.0f) * _side * 0.5f;
+        float top = 2.0f * height / 3.0f;
+        float bottom = -height / 3.0f;
+
+        if (point.y() < bottom || point.y() > top) {
+            return false;
+        }
+
+        float halfWidthAtY = (_side / 2.0f) * (top - point.y()) / height;
+        return std::fabs(point.x()) <= halfWidthAtY;
     }
 };
 
@@ -149,21 +170,64 @@ public:
         glEnd();
         glPopMatrix();
     }
+
+    bool contains(Point<float> point) override {
+        return point.x() * point.x() + point.y() * point.y()
+            <= _radius * _radius;
+    }
 };
 
 class Unit {
 private:
     std::unique_ptr<Shape> _shape;
     Point<float> _location;
+    Point<float> _targetLocation;
+    float _speed;
 
 public:
-    Unit(std::unique_ptr<Shape> shape, Point<float> location)
-        : _shape(std::move(shape)), _location(location) {}
+    Unit(std::unique_ptr<Shape> shape, Point<float> location, float speed)
+        : _shape(std::move(shape)), _location(location), _targetLocation(location), _speed(speed) {}
 
     void draw() {
         // Delegate drawing to the shape stored at this unit's world position.
         this->_shape->draw(this->_location);
-    }    
+    }
+
+    bool contains(Point<float> worldPoint) {
+        // Test against local coordinates because shapes are drawn at the origin.
+        Point<float> localPoint(
+            worldPoint.x() - _location.x(),
+            worldPoint.y() - _location.y()
+        );
+        return _shape->contains(localPoint);
+    }
+
+    void moveTo(Point<float> location) {
+        // Store a destination; update() advances toward it over time.
+        _targetLocation = location;
+    }
+
+    bool update(float elapsedSeconds) {
+        float deltaX = _targetLocation.x() - _location.x();
+        float deltaY = _targetLocation.y() - _location.y();
+        float distance = std::sqrt(deltaX * deltaX + deltaY * deltaY);
+        float distanceThisFrame = _speed * elapsedSeconds;
+
+        if (distance == 0.0f) {
+            return false;
+        }
+        if (distance <= distanceThisFrame) {
+            _location = _targetLocation;
+            return true;
+        }
+
+        // Normalize the direction so speed remains constant on diagonal paths.
+        _location = Point<float>(
+            _location.x() + deltaX / distance * distanceThisFrame,
+            _location.y() + deltaY / distance * distanceThisFrame
+        );
+        return true;
+    }
 };
 
 class World {
@@ -203,7 +267,25 @@ public:
         // Units are drawn in insertion order.
         for (Unit& unit : _units) {
             unit.draw();
-        } 
+        }
+    }
+    Unit* unitAt(Point<float> worldPoint) {
+        // Search in reverse rendering order, selecting the visible top-most unit.
+        for (auto unit = _units.rbegin(); unit != _units.rend(); ++unit) {
+            if (unit->contains(worldPoint)) {
+                return &*unit;
+            }
+        }
+        return nullptr;
+    }
+    bool update(float elapsedSeconds) {
+        bool changed = false;
+        for (Unit& unit : _units) {
+            if (unit.update(elapsedSeconds)) {
+                changed = true;
+            }
+        }
+        return changed;
     }
 };
 
@@ -260,6 +342,17 @@ public:
     float worldUnitsPerScreenUnit() {
         // At higher zoom, a screen-pixel drag covers fewer world units.
         return 1.0f / _targetZoom;
+    }
+
+    Point<float> screenToWorld(int screenX, int screenY, Size<float> viewportSize) {
+        // GLUT mouse coordinates start at the top-left; world coordinates at
+        // the bottom-left, so the screen Y axis must be inverted.
+        float halfWidth = viewportSize.width() / (2.0f * _zoom);
+        float halfHeight = viewportSize.height() / (2.0f * _zoom);
+        return Point<float>(
+            _position.x() - halfWidth + screenX / _zoom,
+            _position.y() + halfHeight - screenY / _zoom
+        );
     }
 
     bool update(float elapsedSeconds) {
@@ -320,6 +413,7 @@ bool scrollButtonPressed = false;
 int lastMouseX = 0;
 int lastMouseY = 0;
 int lastUpdateTime = 0;
+Unit* selectedUnit = nullptr;
 
 void display() {
     // Clear the back buffer, draw the world, then present the completed frame.
@@ -342,7 +436,23 @@ void mouseButton(int button, int state, int x, int y) {
         scrollButtonPressed = state == GLUT_DOWN;
         lastMouseX = x;
         lastMouseY = y;
+        return;
     }
+
+    if (state != GLUT_DOWN) {
+        return;
+    }
+
+    Point<float> worldPoint = camera->screenToWorld(x, y, viewportSize);
+    if (button == GLUT_LEFT_BUTTON) {
+        // Clicking empty space clears the current selection.
+        selectedUnit = world->unitAt(worldPoint);
+    } else if (button == GLUT_RIGHT_BUTTON && selectedUnit != nullptr) {
+        // A right-click sets a destination for the selected unit.
+        selectedUnit->moveTo(worldPoint);
+    }
+
+    glutPostRedisplay();
 }
 
 void mouseMotion(int x, int y) {
@@ -401,9 +511,14 @@ void idle() {
         elapsedSeconds = 0.1f;
     }
 
-    if (camera->update(elapsedSeconds)) {
-        // Redraw only while the camera is still moving toward a target.
+    bool cameraChanged = camera->update(elapsedSeconds);
+    bool worldChanged = world->update(elapsedSeconds);
+    if (cameraChanged) {
+        // Projection changes only when the camera has moved or zoomed.
         camera->apply(viewportSize);
+    }
+    if (cameraChanged || worldChanged) {
+        // Animate while either the camera or at least one unit is in motion.
         glutPostRedisplay();
     }
 }
@@ -430,15 +545,18 @@ int main(int argc, char** argv) {
     world = new World(worldSize, Color(0.05f, 0.10f, 0.20f));
     world->addUnit(Unit(
         std::make_unique<Square>(Size<float>(10.0f, 10.0f)),
-        Point<float>(50.0f, 50.0f)
+        Point<float>(50.0f, 50.0f),
+        80.0f
     ));
     world->addUnit(Unit(
         std::make_unique<Triangle>(10.0f),
-        Point<float>(200.0f, 50.0f)
+        Point<float>(200.0f, 50.0f),
+        120.0f
     ));
     world->addUnit(Unit(
         std::make_unique<Circle>(5.0f),
-        Point<float>(350.0f, 100.0f)
+        Point<float>(350.0f, 100.0f),
+        60.0f
     ));
 
     // Start with a camera centered over the whole world at 1× zoom.
