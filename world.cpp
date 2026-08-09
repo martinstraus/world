@@ -2,6 +2,8 @@
 #include <GL/freeglut.h>
 #include <vector>
 #include <cmath>
+#include <memory>
+#include <utility>
 
 // General purpose types
 
@@ -101,12 +103,13 @@ public:
 
 class Unit {
 private:
-    // Unit does not own this pointer; the caller must keep the Shape alive.
-    Shape* _shape;
+    std::unique_ptr<Shape> _shape;
     Point<float> _location;
 
 public:
-    Unit(Shape* shape, Point<float> location) : _shape(shape), _location(location) {}
+    Unit(std::unique_ptr<Shape> shape, Point<float> location)
+        : _shape(std::move(shape)), _location(location) {}
+
     void draw() {
         this->_shape->draw(this->_location);
     }    
@@ -122,7 +125,7 @@ public:
     ~World();
     Size<int> size() { return this->_size; };
     void addUnit(Unit unit) {
-        _units.push_back(unit);
+        _units.push_back(std::move(unit));
     }
     void render() {
         for (Unit& unit : _units) {
@@ -205,13 +208,14 @@ int main(int argc, char** argv) {
 
     Size<int> worldSize{1024, 768};
     world = new World(worldSize);
-    Square square(Size<float>(10.0f, 10.0f));
-    Unit unit1(&square, Point<float>(50.0f, 50.0f));
-    world->addUnit(unit1);
-
-    Triangle triangle(10.0f);
-    Unit unit2(&triangle, Point<float>(200.0f, 50.0f));
-    world->addUnit(unit2);
+    world->addUnit(Unit(
+        std::make_unique<Square>(Size<float>(10.0f, 10.0f)),
+        Point<float>(50.0f, 50.0f)
+    ));
+    world->addUnit(Unit(
+        std::make_unique<Triangle>(10.0f),
+        Point<float>(200.0f, 50.0f)
+    ));
 
     viewportSize = Size<float>((float)worldSize.width(), (float)worldSize.height());
     camera = new Camera(
