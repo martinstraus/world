@@ -32,12 +32,15 @@ Run `make clean` to remove the compiled `world` executable.
   triangle fan with 48 segments by default.
 - `Unit` exclusively owns its `Shape` via `std::unique_ptr` together with a
   world location.
-- `World` owns a vector of `Unit` values and renders them.
+- `World` owns a vector of `Unit` values, renders them, and owns the
+  configurable background color used to clear the window.
 - `Camera` configures the orthographic projection and is updated when the
-  GLUT window is resized.
+  GLUT window is resized. Hold and drag with the middle mouse button to pan
+  the world.
 
 At startup, the application creates a 1024×768 window and renders a square
 at `(50, 50)`, a triangle at `(200, 50)`, and a circle at `(350, 100)`.
+The sample world uses a dark-blue background.
 
 ## Maintenance notes
 

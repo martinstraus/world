@@ -31,6 +31,19 @@ public:
     T height() { return this->_height; }
 };
 
+class Color {
+private:
+    float _red, _green, _blue;
+
+public:
+    Color(float red, float green, float blue)
+        : _red(red), _green(green), _blue(blue) {}
+
+    float red() { return _red; }
+    float green() { return _green; }
+    float blue() { return _blue; }
+};
+
 // World types
 
 class Shape {
@@ -151,14 +164,25 @@ public:
 class World {
 private:
     Size<int> _size;
+    Color _backgroundColor;
     std::vector<Unit> _units;
 
 public:
-    World(Size<int> size): _size(size) { }
+    World(Size<int> size, Color backgroundColor)
+        : _size(size), _backgroundColor(backgroundColor) { }
     ~World();
     Size<int> size() { return this->_size; };
     void addUnit(Unit unit) {
         _units.push_back(std::move(unit));
+    }
+    void clear() {
+        glClearColor(
+            _backgroundColor.red(),
+            _backgroundColor.green(),
+            _backgroundColor.blue(),
+            1.0f
+        );
+        glClear(GL_COLOR_BUFFER_BIT);
     }
     void render() {
         for (Unit& unit : _units) {
@@ -188,7 +212,14 @@ private:
 public:
     Camera(Point<float> position, float zoom) : _position(position), _zoom(zoom) {}
 
-    void position(Size<float> viewportSize) {
+    void move(float x, float y) {
+        _position = Point<float>(
+            _position.x() + x,
+            _position.y() + y
+        );
+    }
+
+    void apply(Size<float> viewportSize) {
         float halfWidth  = viewportSize.width() / (2.0f * _zoom);
         float halfHeight = viewportSize.height() / (2.0f * _zoom);
 
@@ -211,17 +242,45 @@ public:
 World* world;
 Camera* camera;
 Size<float> viewportSize = Size<float>(0.0f, 0.0f);
+bool scrollButtonPressed = false;
+int lastMouseX = 0;
+int lastMouseY = 0;
 
 void display() {
-    glClear(GL_COLOR_BUFFER_BIT);
+    world->clear();
     world->render();
     glutSwapBuffers();
 }
 
 void reshape(int w, int h)
 {
+    viewportSize = Size<float>(static_cast<float>(w), static_cast<float>(h));
     glViewport(0, 0, w, h);
-    camera->position(Size<float>((float)w, (float)h));
+    camera->apply(viewportSize);
+}
+
+void mouseButton(int button, int state, int x, int y) {
+    if (button == GLUT_MIDDLE_BUTTON) {
+        scrollButtonPressed = state == GLUT_DOWN;
+        lastMouseX = x;
+        lastMouseY = y;
+    }
+}
+
+void mouseMotion(int x, int y) {
+    if (!scrollButtonPressed) {
+        return;
+    }
+
+    camera->move(
+        static_cast<float>(lastMouseX - x),
+        static_cast<float>(y - lastMouseY)
+    );
+    lastMouseX = x;
+    lastMouseY = y;
+
+    camera->apply(viewportSize);
+    glutPostRedisplay();
 }
 
 void closeHandler(int) {
@@ -240,7 +299,7 @@ int main(int argc, char** argv) {
     }; 
 
     Size<int> worldSize{1024, 768};
-    world = new World(worldSize);
+    world = new World(worldSize, Color(0.05f, 0.10f, 0.20f));
     world->addUnit(Unit(
         std::make_unique<Square>(Size<float>(10.0f, 10.0f)),
         Point<float>(50.0f, 50.0f)
@@ -271,11 +330,11 @@ int main(int argc, char** argv) {
 
     glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_EXIT);
 
-    glClearColor(0, 0, 0, 1);
-    
-    camera->position(viewportSize);
+    camera->apply(viewportSize);
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
+    glutMouseFunc(mouseButton);
+    glutMotionFunc(mouseMotion);
 
     glutMainLoop();
     return 0;
