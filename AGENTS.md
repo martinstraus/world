@@ -33,7 +33,8 @@ Run `make clean` to remove the compiled `world` executable.
 - `Unit` exclusively owns its `Shape` via `std::unique_ptr` together with a
   world location, destination, and movement speed (world units per second).
 - `World` owns a vector of `Unit` values, renders them, and owns the
-  configurable background color used to clear the window.
+  configurable background color used to clear the window. It also owns an
+  ambient-light intensity and a collection of radial point lights.
 - `Camera` configures the orthographic projection and is updated when the
   GLUT window is resized. Hold and drag with the middle mouse button to pan
   the world. The mouse wheel zooms around the camera centre, limited to a
@@ -46,6 +47,7 @@ Run `make clean` to remove the compiled `world` executable.
 At startup, the application creates a 1024×768 window and renders a square
 at `(50, 50)`, a triangle at `(200, 50)`, and a circle at `(350, 100)`.
 The sample world uses a dark-blue background.
+It applies ambient intensity `0.25` and includes two colorless point lights.
 
 ## Maintenance notes
 
@@ -57,4 +59,7 @@ The sample world uses a dark-blue background.
 - Rendering uses the deprecated fixed-function OpenGL API (`glBegin`, matrix
   stack, `glOrtho`). Keep this in mind before targeting modern OpenGL or
   platforms where compatibility OpenGL is unavailable.
+- Lighting does not render visible light geometry. Each unit's brightness is
+  its ambient intensity plus the linearly falling-off contribution of nearby
+  colorless point lights. It does not model shadows or occlusion.
 - Avoid committing generated build artifacts such as `world` and `world.dSYM/`.

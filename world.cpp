@@ -44,13 +44,37 @@ public:
     float blue() { return _blue; }
 };
 
+class Light {
+private:
+    Point<float> _location;
+    float _radius;
+    float _intensity;
+
+public:
+    Light(Point<float> location, float radius, float intensity)
+        : _location(location), _radius(radius), _intensity(intensity) {}
+
+    float illuminationAt(Point<float> location) {
+        float deltaX = location.x() - _location.x();
+        float deltaY = location.y() - _location.y();
+        float distance = std::sqrt(deltaX * deltaX + deltaY * deltaY);
+
+        if (distance >= _radius) {
+            return 0.0f;
+        }
+        // Light falls off linearly from its intensity at the source to zero
+        // at the edge of its radius.
+        return _intensity * (1.0f - distance / _radius);
+    }
+};
+
 // World types
 
 class Shape {
 
 public:
     virtual ~Shape() = default;
-    virtual void draw(Point<float>) {
+    virtual void draw(Point<float>, float) {
         std::cout << "[draw not implemented]\n";
     }
     virtual bool contains(Point<float>) {
@@ -65,9 +89,9 @@ private:
 public:
     Square(Size<float> size) : _size(size) {}
 
-    void draw(Point<float> location) override {
+    void draw(Point<float> location, float brightness) override {
         // Define the square around the origin, then translate it to its unit.
-        glColor3f(1, 0, 0);
+        glColor3f(brightness, 0, 0);
     
         float halfWidth = _size.width() / 2;
         float halfHeight = _size.height() / 2;
@@ -98,11 +122,11 @@ private:
 public:
     Triangle(float side) : _side(side) {}
 
-    void draw(Point<float> location) override {
+    void draw(Point<float> location, float brightness) override {
         // Derive the height of an equilateral triangle from its side length.
         float h = std::sqrt(3.0f) * _side * 0.5f;
 
-        glColor3f(1, 0, 0);
+        glColor3f(brightness, 0, 0);
         
         glPushMatrix();
         glTranslatef(location.x(), location.y(), 0.0f);
@@ -146,11 +170,11 @@ public:
     Circle(float radius, int segments = 48)
         : _radius(radius), _segments(segments) {}
 
-    void draw(Point<float> location) override {
+    void draw(Point<float> location, float brightness) override {
         // A triangle fan joins the center to consecutive edge points.
         constexpr float pi = 3.14159265358979323846f;
 
-        glColor3f(1, 0, 0);
+        glColor3f(brightness, 0, 0);
 
         glPushMatrix();
         glTranslatef(location.x(), location.y(), 0.0f);
@@ -188,9 +212,9 @@ public:
     Unit(std::unique_ptr<Shape> shape, Point<float> location, float speed)
         : _shape(std::move(shape)), _location(location), _targetLocation(location), _speed(speed) {}
 
-    void draw() {
+    void draw(float brightness) {
         // Delegate drawing to the shape stored at this unit's world position.
-        this->_shape->draw(this->_location);
+        this->_shape->draw(this->_location, brightness);
     }
 
     bool contains(Point<float> worldPoint) {
@@ -205,6 +229,10 @@ public:
     void moveTo(Point<float> location) {
         // Store a destination; update() advances toward it over time.
         _targetLocation = location;
+    }
+
+    Point<float> location() {
+        return _location;
     }
 
     bool update(float elapsedSeconds) {
@@ -234,11 +262,13 @@ class World {
 private:
     Size<int> _size;
     Color _backgroundColor;
+    float _ambientIntensity;
     std::vector<Unit> _units;
+    std::vector<Light> _lights;
 
 public:
-    World(Size<int> size, Color backgroundColor)
-        : _size(size), _backgroundColor(backgroundColor) { }
+    World(Size<int> size, Color backgroundColor, float ambientIntensity)
+        : _size(size), _backgroundColor(backgroundColor), _ambientIntensity(ambientIntensity) { }
     ~World();
     Size<int> size() { return this->_size; };
     Point<float> center() {
@@ -253,6 +283,9 @@ public:
         // Unit owns a unique_ptr, so it must be moved into the vector.
         _units.push_back(std::move(unit));
     }
+    void addLight(Light light) {
+        _lights.push_back(light);
+    }
     void clear() {
         // Set the color used by glClear, then erase the previous frame.
         glClearColor(
@@ -266,7 +299,14 @@ public:
     void render() {
         // Units are drawn in insertion order.
         for (Unit& unit : _units) {
-            unit.draw();
+            float brightness = _ambientIntensity;
+            for (Light& light : _lights) {
+                brightness += light.illuminationAt(unit.location());
+            }
+            if (brightness > 1.0f) {
+                brightness = 1.0f;
+            }
+            unit.draw(brightness);
         }
     }
     Unit* unitAt(Point<float> worldPoint) {
@@ -542,7 +582,7 @@ int main(int argc, char** argv) {
 
     // Populate a small sample world with one unit of each available shape.
     Size<int> worldSize{1024, 768};
-    world = new World(worldSize, Color(0.05f, 0.10f, 0.20f));
+    world = new World(worldSize, Color(0.05f, 0.10f, 0.20f), 0.25f);
     world->addUnit(Unit(
         std::make_unique<Square>(Size<float>(10.0f, 10.0f)),
         Point<float>(50.0f, 50.0f),
@@ -557,6 +597,16 @@ int main(int argc, char** argv) {
         std::make_unique<Circle>(5.0f),
         Point<float>(350.0f, 100.0f),
         60.0f
+    ));
+    world->addLight(Light(
+        Point<float>(150.0f, 120.0f),
+        150.0f,
+        0.8f
+    ));
+    world->addLight(Light(
+        Point<float>(450.0f, 240.0f),
+        180.0f,
+        0.7f
     ));
 
     // Start with a camera centered over the whole world at 1× zoom.
