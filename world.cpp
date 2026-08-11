@@ -253,6 +253,11 @@ public:
         _targetLocation = location;
     }
 
+    void stop() {
+        // Make the current position the destination to cancel any movement.
+        _targetLocation = _location;
+    }
+
     Point<float> location() {
         return _location;
     }
@@ -409,6 +414,11 @@ public:
             float x = destination.x() + (column - (columns - 1) / 2.0f) * spacing;
             float y = destination.y() + (row - (rows - 1) / 2.0f) * spacing;
             units[index]->moveTo(Point<float>(x, y));
+        }
+    }
+    void stopUnits(std::vector<Unit*> units) {
+        for (Unit* unit : units) {
+            unit->stop();
         }
     }
 };
@@ -689,6 +699,9 @@ void keyboard(unsigned char key, int, int) {
         camera->setPosition(world->center());
         camera->apply(viewportSize);
         glutPostRedisplay();
+    } else if (key == 's' || key == 'S') {
+        // Stop only the units that are part of the current selection.
+        world->stopUnits(selectedUnits);
     }
 }
 

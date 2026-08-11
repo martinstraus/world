@@ -59,8 +59,9 @@ background of `0.05 0.10 0.20`.
   add or remove units from the selection. Right-click sends the selected group
   to unique slots in a centered grid formation. Grid spacing encloses the
   largest selected unit, preventing destination overlap. Units animate toward
-  their destinations at their own configured speeds. A selected unit has a
-  translucent green selection ring rendered beneath it.
+  their destinations at their own configured speeds. Press `S` to stop all
+  selected units at their current positions. A selected unit has a translucent
+  green selection ring rendered beneath it.
 
 At startup, the application creates a 1024×768 window and renders a square
 at `(50, 50)`, a triangle at `(200, 50)`, and a circle at `(350, 100)`.
