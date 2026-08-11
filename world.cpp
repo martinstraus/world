@@ -257,6 +257,10 @@ public:
         return _location;
     }
 
+    float selectionRadius() {
+        return _shape->selectionRadius();
+    }
+
     void drawSelection() {
         constexpr int segments = 48;
         constexpr float pi = 3.14159265358979323846f;
@@ -357,8 +361,8 @@ public:
             unit.draw(brightness);
         }
     }
-    void renderSelection(Unit* selectedUnit) {
-        if (selectedUnit != nullptr) {
+    void renderSelection(std::vector<Unit*> selectedUnits) {
+        for (Unit* selectedUnit : selectedUnits) {
             selectedUnit->drawSelection();
         }
     }
@@ -379,6 +383,33 @@ public:
             }
         }
         return changed;
+    }
+    void moveUnitsToFormation(std::vector<Unit*> units, Point<float> destination) {
+        if (units.empty()) {
+            return;
+        }
+
+        float largestRadius = 0.0f;
+        for (Unit* unit : units) {
+            if (unit->selectionRadius() > largestRadius) {
+                largestRadius = unit->selectionRadius();
+            }
+        }
+
+        // Each grid cell is wider than the largest selected unit's diameter.
+        float spacing = largestRadius * 2.0f + 3.0f;
+        int columns = static_cast<int>(std::ceil(std::sqrt(units.size())));
+        int rows = static_cast<int>(std::ceil(
+            static_cast<float>(units.size()) / columns
+        ));
+
+        for (size_t index = 0; index < units.size(); ++index) {
+            int column = static_cast<int>(index % columns);
+            int row = static_cast<int>(index / columns);
+            float x = destination.x() + (column - (columns - 1) / 2.0f) * spacing;
+            float y = destination.y() + (row - (rows - 1) / 2.0f) * spacing;
+            units[index]->moveTo(Point<float>(x, y));
+        }
     }
 };
 
@@ -506,7 +537,7 @@ bool scrollButtonPressed = false;
 int lastMouseX = 0;
 int lastMouseY = 0;
 int lastUpdateTime = 0;
-Unit* selectedUnit = nullptr;
+std::vector<Unit*> selectedUnits;
 
 class WorldConfig {
 public:
@@ -552,10 +583,31 @@ WorldConfig loadWorldConfig() {
     return settings;
 }
 
+void selectOnly(Unit* unit) {
+    selectedUnits.clear();
+    if (unit != nullptr) {
+        selectedUnits.push_back(unit);
+    }
+}
+
+void toggleSelection(Unit* unit) {
+    if (unit == nullptr) {
+        return;
+    }
+
+    for (auto selected = selectedUnits.begin(); selected != selectedUnits.end(); ++selected) {
+        if (*selected == unit) {
+            selectedUnits.erase(selected);
+            return;
+        }
+    }
+    selectedUnits.push_back(unit);
+}
+
 void display() {
     // Clear the back buffer, draw the world, then present the completed frame.
     world->clear();
-    world->renderSelection(selectedUnit);
+    world->renderSelection(selectedUnits);
     world->render();
     glutSwapBuffers();
 }
@@ -583,11 +635,17 @@ void mouseButton(int button, int state, int x, int y) {
 
     Point<float> worldPoint = camera->screenToWorld(x, y, viewportSize);
     if (button == GLUT_LEFT_BUTTON) {
-        // Clicking empty space clears the current selection.
-        selectedUnit = world->unitAt(worldPoint);
-    } else if (button == GLUT_RIGHT_BUTTON && selectedUnit != nullptr) {
-        // A right-click sets a destination for the selected unit.
-        selectedUnit->moveTo(worldPoint);
+        Unit* unit = world->unitAt(worldPoint);
+        if (glutGetModifiers() & GLUT_ACTIVE_SHIFT) {
+            // Shift-click adds a unit to the group or removes it if selected.
+            toggleSelection(unit);
+        } else {
+            // A normal click replaces the current group, including with none.
+            selectOnly(unit);
+        }
+    } else if (button == GLUT_RIGHT_BUTTON) {
+        // Give each selected unit a unique grid slot around the destination.
+        world->moveUnitsToFormation(selectedUnits, worldPoint);
     }
 
     glutPostRedisplay();

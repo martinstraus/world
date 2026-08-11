@@ -55,10 +55,12 @@ background of `0.05 0.10 0.20`.
   the world. The mouse wheel zooms around the camera centre, limited to a
   range of 0.1× through 10×. Camera position and zoom interpolate smoothly
   toward input targets. Press `C` to recenter the camera on the world while
-  preserving its zoom level. Left-click a unit to select it; right-click to
-  set its destination. Units animate toward their destinations at their own
-  configured speeds. A selected unit has a translucent green selection ring
-  rendered beneath it.
+  preserving its zoom level. Left-click a unit to select it; Shift-click to
+  add or remove units from the selection. Right-click sends the selected group
+  to unique slots in a centered grid formation. Grid spacing encloses the
+  largest selected unit, preventing destination overlap. Units animate toward
+  their destinations at their own configured speeds. A selected unit has a
+  translucent green selection ring rendered beneath it.
 
 At startup, the application creates a 1024×768 window and renders a square
 at `(50, 50)`, a triangle at `(200, 50)`, and a circle at `(350, 100)`.
