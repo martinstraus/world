@@ -2,7 +2,10 @@
 #include <GL/freeglut.h>
 #include <vector>
 #include <cmath>
+#include <fstream>
 #include <memory>
+#include <sstream>
+#include <string>
 #include <utility>
 
 // General purpose types
@@ -80,6 +83,9 @@ public:
     virtual bool contains(Point<float>) {
         return false;
     }
+    virtual float selectionRadius() {
+        return 0.0f;
+    }
 };
 
 class Square : public Shape {
@@ -112,6 +118,13 @@ public:
     bool contains(Point<float> point) override {
         return std::fabs(point.x()) <= _size.width() / 2.0f
             && std::fabs(point.y()) <= _size.height() / 2.0f;
+    }
+
+    float selectionRadius() override {
+        // Use the distance from center to corner so the ring encloses the square.
+        return std::sqrt(
+            _size.width() * _size.width() + _size.height() * _size.height()
+        ) / 2.0f;
     }
 };
 
@@ -159,6 +172,11 @@ public:
         float halfWidthAtY = (_side / 2.0f) * (top - point.y()) / height;
         return std::fabs(point.x()) <= halfWidthAtY;
     }
+
+    float selectionRadius() override {
+        // The top vertex is the farthest point from the triangle's centroid.
+        return _side / std::sqrt(3.0f);
+    }
 };
 
 class Circle : public Shape {
@@ -199,6 +217,10 @@ public:
         return point.x() * point.x() + point.y() * point.y()
             <= _radius * _radius;
     }
+
+    float selectionRadius() override {
+        return _radius;
+    }
 };
 
 class Unit {
@@ -233,6 +255,32 @@ public:
 
     Point<float> location() {
         return _location;
+    }
+
+    void drawSelection() {
+        constexpr int segments = 48;
+        constexpr float pi = 3.14159265358979323846f;
+        float radius = _shape->selectionRadius() + 3.0f;
+
+        // The ring is drawn in world coordinates, so it pans and zooms with
+        // its unit while remaining slightly larger than the shape.
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(0.2f, 1.0f, 0.25f, 0.9f);
+        glLineWidth(2.0f);
+
+        glBegin(GL_LINE_LOOP);
+        for (int i = 0; i < segments; ++i) {
+            float angle = 2.0f * pi * i / segments;
+            glVertex2f(
+                _location.x() + radius * std::cos(angle),
+                _location.y() + radius * std::sin(angle)
+            );
+        }
+        glEnd();
+
+        glLineWidth(1.0f);
+        glDisable(GL_BLEND);
     }
 
     bool update(float elapsedSeconds) {
@@ -307,6 +355,11 @@ public:
                 brightness = 1.0f;
             }
             unit.draw(brightness);
+        }
+    }
+    void renderSelection(Unit* selectedUnit) {
+        if (selectedUnit != nullptr) {
+            selectedUnit->drawSelection();
         }
     }
     Unit* unitAt(Point<float> worldPoint) {
@@ -455,9 +508,54 @@ int lastMouseY = 0;
 int lastUpdateTime = 0;
 Unit* selectedUnit = nullptr;
 
+class WorldConfig {
+public:
+    Color backgroundColor;
+    float ambientIntensity;
+
+    WorldConfig(Color backgroundColor, float ambientIntensity)
+        : backgroundColor(backgroundColor), ambientIntensity(ambientIntensity) {}
+};
+
+WorldConfig loadWorldConfig() {
+    WorldConfig settings(Color(0.05f, 0.10f, 0.20f), 0.25f);
+    std::ifstream config("world.conf");
+    std::string line;
+
+    // Defaults remain in place when the optional configuration file is absent.
+    while (std::getline(config, line)) {
+        std::istringstream settingLine(line);
+        std::string setting;
+        char equals;
+        if (!(settingLine >> setting >> equals) || equals != '=') {
+            continue;
+        }
+
+        if (setting == "ambient_light") {
+            float ambientIntensity;
+            if (settingLine >> ambientIntensity
+                && ambientIntensity >= 0.0f && ambientIntensity <= 1.0f) {
+                settings.ambientIntensity = ambientIntensity;
+            }
+        } else if (setting == "background_color") {
+            float red;
+            float green;
+            float blue;
+            if (settingLine >> red >> green >> blue
+                && red >= 0.0f && red <= 1.0f
+                && green >= 0.0f && green <= 1.0f
+                && blue >= 0.0f && blue <= 1.0f) {
+                settings.backgroundColor = Color(red, green, blue);
+            }
+        }
+    }
+    return settings;
+}
+
 void display() {
     // Clear the back buffer, draw the world, then present the completed frame.
     world->clear();
+    world->renderSelection(selectedUnit);
     world->render();
     glutSwapBuffers();
 }
@@ -582,7 +680,12 @@ int main(int argc, char** argv) {
 
     // Populate a small sample world with one unit of each available shape.
     Size<int> worldSize{1024, 768};
-    world = new World(worldSize, Color(0.05f, 0.10f, 0.20f), 0.25f);
+    WorldConfig worldConfig = loadWorldConfig();
+    world = new World(
+        worldSize,
+        worldConfig.backgroundColor,
+        worldConfig.ambientIntensity
+    );
     world->addUnit(Unit(
         std::make_unique<Square>(Size<float>(10.0f, 10.0f)),
         Point<float>(50.0f, 50.0f),

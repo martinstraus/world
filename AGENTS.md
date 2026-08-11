@@ -24,6 +24,21 @@ Studio Code task **Build world** runs `make`.
 
 Run `make clean` to remove the compiled `world` executable.
 
+## Configuration
+
+`world.conf` controls the ambient brightness of units and the background RGB
+color. Set `ambient_light` to a value from `0.0` (dark) through `1.0` (fully
+bright), and set `background_color` with three values in the same range:
+
+```ini
+ambient_light = 0.25
+background_color = 0.05 0.10 0.20
+```
+
+If `world.conf` is missing or a setting is malformed or outside that range,
+the application uses defaults: ambient intensity `0.25` and a dark-blue
+background of `0.05 0.10 0.20`.
+
 ## Current structure
 
 - `Point<T>` and `Size<T>` are basic geometry value types.
@@ -42,7 +57,8 @@ Run `make clean` to remove the compiled `world` executable.
   toward input targets. Press `C` to recenter the camera on the world while
   preserving its zoom level. Left-click a unit to select it; right-click to
   set its destination. Units animate toward their destinations at their own
-  configured speeds.
+  configured speeds. A selected unit has a translucent green selection ring
+  rendered beneath it.
 
 At startup, the application creates a 1024×768 window and renders a square
 at `(50, 50)`, a triangle at `(200, 50)`, and a circle at `(350, 100)`.
