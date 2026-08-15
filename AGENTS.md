@@ -56,12 +56,14 @@ background of `0.05 0.10 0.20`.
   range of 0.1× through 10×. Camera position and zoom interpolate smoothly
   toward input targets. Press `C` to recenter the camera on the world while
   preserving its zoom level. Left-click a unit to select it; Shift-click to
-  add or remove units from the selection. Right-click sends the selected group
-  to unique slots in a centered grid formation. Grid spacing encloses the
-  largest selected unit, preventing destination overlap. Units animate toward
-  their destinations at their own configured speeds. Press `S` to stop all
-  selected units at their current positions. A selected unit has a translucent
-  green selection ring rendered beneath it.
+  add or remove units from the selection. Drag with the left mouse button to
+  select all unit centers inside a green selection rectangle; Shift-drag adds
+  that group to the current selection. Right-click sends the selected group to
+  unique slots in a centered grid formation. Grid spacing encloses the largest
+  selected unit, preventing destination overlap. Units animate toward their
+  destinations at their own configured speeds. Press `S` to stop all selected
+  units at their current positions or `Escape` to clear the selection. A
+  selected unit has a translucent green selection ring rendered beneath it.
 
 At startup, the application creates a 1024×768 window and renders a square
 at `(50, 50)`, a triangle at `(200, 50)`, and a circle at `(350, 100)`.

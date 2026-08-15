@@ -1,5 +1,6 @@
 #include <iostream>
 #include <GL/freeglut.h>
+#include <algorithm>
 #include <vector>
 #include <cmath>
 #include <fstream>
@@ -380,6 +381,23 @@ public:
         }
         return nullptr;
     }
+    std::vector<Unit*> unitsInRectangle(Point<float> first, Point<float> second) {
+        float left = std::min(first.x(), second.x());
+        float right = std::max(first.x(), second.x());
+        float bottom = std::min(first.y(), second.y());
+        float top = std::max(first.y(), second.y());
+        std::vector<Unit*> units;
+
+        // A unit is selected when its center lies inside the drag rectangle.
+        for (Unit& unit : _units) {
+            Point<float> location = unit.location();
+            if (location.x() >= left && location.x() <= right
+                && location.y() >= bottom && location.y() <= top) {
+                units.push_back(&unit);
+            }
+        }
+        return units;
+    }
     bool update(float elapsedSeconds) {
         bool changed = false;
         for (Unit& unit : _units) {
@@ -548,6 +566,12 @@ int lastMouseX = 0;
 int lastMouseY = 0;
 int lastUpdateTime = 0;
 std::vector<Unit*> selectedUnits;
+bool selectionBoxActive = false;
+bool selectionBoxAdditive = false;
+int selectionBoxStartMouseX = 0;
+int selectionBoxStartMouseY = 0;
+Point<float> selectionBoxStart(0.0f, 0.0f);
+Point<float> selectionBoxEnd(0.0f, 0.0f);
 
 class WorldConfig {
 public:
@@ -614,11 +638,63 @@ void toggleSelection(Unit* unit) {
     selectedUnits.push_back(unit);
 }
 
+void addToSelection(std::vector<Unit*> units, bool additive) {
+    if (!additive) {
+        selectedUnits.clear();
+    }
+
+    for (Unit* unit : units) {
+        bool alreadySelected = false;
+        for (Unit* selectedUnit : selectedUnits) {
+            if (selectedUnit == unit) {
+                alreadySelected = true;
+                break;
+            }
+        }
+        if (!alreadySelected) {
+            selectedUnits.push_back(unit);
+        }
+    }
+}
+
+void drawSelectionBox() {
+    if (!selectionBoxActive) {
+        return;
+    }
+
+    float left = std::min(selectionBoxStart.x(), selectionBoxEnd.x());
+    float right = std::max(selectionBoxStart.x(), selectionBoxEnd.x());
+    float bottom = std::min(selectionBoxStart.y(), selectionBoxEnd.y());
+    float top = std::max(selectionBoxStart.y(), selectionBoxEnd.y());
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.2f, 1.0f, 0.25f, 0.15f);
+    glBegin(GL_QUADS);
+    glVertex2f(left, bottom);
+    glVertex2f(right, bottom);
+    glVertex2f(right, top);
+    glVertex2f(left, top);
+    glEnd();
+
+    glColor4f(0.2f, 1.0f, 0.25f, 0.9f);
+    glLineWidth(1.5f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(left, bottom);
+    glVertex2f(right, bottom);
+    glVertex2f(right, top);
+    glVertex2f(left, top);
+    glEnd();
+    glLineWidth(1.0f);
+    glDisable(GL_BLEND);
+}
+
 void display() {
     // Clear the back buffer, draw the world, then present the completed frame.
     world->clear();
     world->renderSelection(selectedUnits);
     world->render();
+    drawSelectionBox();
     glutSwapBuffers();
 }
 
@@ -639,21 +715,43 @@ void mouseButton(int button, int state, int x, int y) {
         return;
     }
 
-    if (state != GLUT_DOWN) {
+    Point<float> worldPoint = camera->screenToWorld(x, y, viewportSize);
+    if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+        // Delay selection until release so a click can become a drag box.
+        selectionBoxActive = true;
+        selectionBoxAdditive = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
+        selectionBoxStartMouseX = x;
+        selectionBoxStartMouseY = y;
+        selectionBoxStart = worldPoint;
+        selectionBoxEnd = worldPoint;
         return;
     }
 
-    Point<float> worldPoint = camera->screenToWorld(x, y, viewportSize);
-    if (button == GLUT_LEFT_BUTTON) {
-        Unit* unit = world->unitAt(worldPoint);
-        if (glutGetModifiers() & GLUT_ACTIVE_SHIFT) {
-            // Shift-click adds a unit to the group or removes it if selected.
-            toggleSelection(unit);
+    if (button == GLUT_LEFT_BUTTON && state == GLUT_UP && selectionBoxActive) {
+        constexpr int clickTolerance = 4;
+        int dragX = std::abs(x - selectionBoxStartMouseX);
+        int dragY = std::abs(y - selectionBoxStartMouseY);
+        selectionBoxEnd = worldPoint;
+        selectionBoxActive = false;
+
+        if (dragX <= clickTolerance && dragY <= clickTolerance) {
+            Unit* unit = world->unitAt(worldPoint);
+            if (selectionBoxAdditive) {
+                toggleSelection(unit);
+            } else {
+                selectOnly(unit);
+            }
         } else {
-            // A normal click replaces the current group, including with none.
-            selectOnly(unit);
+            addToSelection(
+                world->unitsInRectangle(selectionBoxStart, selectionBoxEnd),
+                selectionBoxAdditive
+            );
         }
-    } else if (button == GLUT_RIGHT_BUTTON) {
+        glutPostRedisplay();
+        return;
+    }
+
+    if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
         // Give each selected unit a unique grid slot around the destination.
         world->moveUnitsToFormation(selectedUnits, worldPoint);
     }
@@ -662,21 +760,25 @@ void mouseButton(int button, int state, int x, int y) {
 }
 
 void mouseMotion(int x, int y) {
-    if (!scrollButtonPressed) {
+    if (scrollButtonPressed) {
+        // Screen Y grows downward, hence the reversed signs in the camera delta.
+        float worldUnitsPerScreenUnit = camera->worldUnitsPerScreenUnit();
+        camera->move(
+            (lastMouseX - x) * worldUnitsPerScreenUnit,
+            (y - lastMouseY) * worldUnitsPerScreenUnit
+        );
+        lastMouseX = x;
+        lastMouseY = y;
+
+        camera->apply(viewportSize);
+        glutPostRedisplay();
         return;
     }
 
-    // Screen Y grows downward, hence the reversed signs in the camera delta.
-    float worldUnitsPerScreenUnit = camera->worldUnitsPerScreenUnit();
-    camera->move(
-        (lastMouseX - x) * worldUnitsPerScreenUnit,
-        (y - lastMouseY) * worldUnitsPerScreenUnit
-    );
-    lastMouseX = x;
-    lastMouseY = y;
-
-    camera->apply(viewportSize);
-    glutPostRedisplay();
+    if (selectionBoxActive) {
+        selectionBoxEnd = camera->screenToWorld(x, y, viewportSize);
+        glutPostRedisplay();
+    }
 }
 
 void mouseWheel(int, int direction, int, int) {
@@ -694,7 +796,11 @@ void mouseWheel(int, int direction, int, int) {
 }
 
 void keyboard(unsigned char key, int, int) {
-    if (key == 'c' || key == 'C') {
+    if (key == 27) {
+        // Escape clears every selected unit without affecting its movement.
+        selectedUnits.clear();
+        glutPostRedisplay();
+    } else if (key == 'c' || key == 'C') {
         // Recenter by updating the target, allowing the normal easing to run.
         camera->setPosition(world->center());
         camera->apply(viewportSize);
