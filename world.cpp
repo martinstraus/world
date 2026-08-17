@@ -326,6 +326,21 @@ private:
     std::vector<Unit> _units;
     std::vector<Light> _lights;
 
+    Point<float> constrainedUnitDestination(Unit& unit, Point<float> destination) {
+        // A unit's enclosing radius protects every shape type, including the
+        // corners of squares and the vertices of triangles.
+        float radius = unit.selectionRadius();
+        float centerX = _size.width() / 2.0f;
+        float centerY = _size.height() / 2.0f;
+        float x = radius >= centerX
+            ? centerX
+            : std::clamp(destination.x(), radius, _size.width() - radius);
+        float y = radius >= centerY
+            ? centerY
+            : std::clamp(destination.y(), radius, _size.height() - radius);
+        return Point<float>(x, y);
+    }
+
 public:
     World(Size<int> size, Color backgroundColor, Color outsideColor, Color borderColor,
           float ambientIntensity)
@@ -464,7 +479,9 @@ public:
             int row = static_cast<int>(index / columns);
             float x = destination.x() + (column - (columns - 1) / 2.0f) * spacing;
             float y = destination.y() + (row - (rows - 1) / 2.0f) * spacing;
-            units[index]->moveTo(Point<float>(x, y));
+            units[index]->moveTo(constrainedUnitDestination(
+                *units[index], Point<float>(x, y)
+            ));
         }
     }
     void stopUnits(std::vector<Unit*> units) {
