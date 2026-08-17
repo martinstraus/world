@@ -26,18 +26,24 @@ Run `make clean` to remove the compiled `world` executable.
 
 ## Configuration
 
-`world.conf` controls the ambient brightness of units and the background RGB
-color. Set `ambient_light` to a value from `0.0` (dark) through `1.0` (fully
-bright), and set `background_color` with three values in the same range:
+`world.conf` controls the ambient brightness of units, the world background
+RGB color, and the color outside the world boundary. Set `ambient_light` to a
+value from `0.0` (dark) through `1.0` (fully bright), and set
+`background_color`, `outside_color`, and `border_color` with three values in
+the same range:
 
 ```ini
 ambient_light = 0.25
 background_color = 0.05 0.10 0.20
+outside_color = 0.015 0.015 0.015
+border_color = 0.35 0.55 0.75
 ```
 
 If `world.conf` is missing or a setting is malformed or outside that range,
 the application uses defaults: ambient intensity `0.25` and a dark-blue
-background of `0.05 0.10 0.20`.
+world background of `0.05 0.10 0.20`; the surrounding space defaults to very
+dark gray (`0.015 0.015 0.015`); the border defaults to blue-gray
+(`0.35 0.55 0.75`).
 
 ## Current structure
 

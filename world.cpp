@@ -320,13 +320,17 @@ class World {
 private:
     Size<int> _size;
     Color _backgroundColor;
+    Color _outsideColor;
+    Color _borderColor;
     float _ambientIntensity;
     std::vector<Unit> _units;
     std::vector<Light> _lights;
 
 public:
-    World(Size<int> size, Color backgroundColor, float ambientIntensity)
-        : _size(size), _backgroundColor(backgroundColor), _ambientIntensity(ambientIntensity) { }
+    World(Size<int> size, Color backgroundColor, Color outsideColor, Color borderColor,
+          float ambientIntensity)
+        : _size(size), _backgroundColor(backgroundColor), _outsideColor(outsideColor),
+          _borderColor(borderColor), _ambientIntensity(ambientIntensity) { }
     ~World();
     Size<int> size() { return this->_size; };
     Point<float> center() {
@@ -345,15 +349,30 @@ public:
         _lights.push_back(light);
     }
     void clear() {
-        // Set the color used by glClear, then erase the previous frame.
+        // Clearing first paints the space that lies outside the world.
         glClearColor(
-            _backgroundColor.red(),
-            _backgroundColor.green(),
-            _backgroundColor.blue(),
+            _outsideColor.red(),
+            _outsideColor.green(),
+            _outsideColor.blue(),
             1.0f
         );
         glClear(GL_COLOR_BUFFER_BIT);
     }
+    void renderBackground() {
+        // Paint the finite world area separately from the surrounding space.
+        glColor3f(
+            _backgroundColor.red(),
+            _backgroundColor.green(),
+            _backgroundColor.blue()
+        );
+        glBegin(GL_QUADS);
+        glVertex2f(0.0f, 0.0f);
+        glVertex2f(static_cast<float>(_size.width()), 0.0f);
+        glVertex2f(static_cast<float>(_size.width()), static_cast<float>(_size.height()));
+        glVertex2f(0.0f, static_cast<float>(_size.height()));
+        glEnd();
+    }
+
     void render() {
         // Units are drawn in insertion order.
         for (Unit& unit : _units) {
@@ -366,6 +385,20 @@ public:
             }
             unit.draw(brightness);
         }
+    }
+    void renderBorder() {
+        // These vertices are in world coordinates, so the outline follows the
+        // camera projection at every zoom level.  OpenGL line width is in
+        // screen pixels, keeping the border readable when zooming.
+        glColor3f(_borderColor.red(), _borderColor.green(), _borderColor.blue());
+        glLineWidth(2.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(0.0f, 0.0f);
+        glVertex2f(static_cast<float>(_size.width()), 0.0f);
+        glVertex2f(static_cast<float>(_size.width()), static_cast<float>(_size.height()));
+        glVertex2f(0.0f, static_cast<float>(_size.height()));
+        glEnd();
+        glLineWidth(1.0f);
     }
     void renderSelection(std::vector<Unit*> selectedUnits) {
         for (Unit* selectedUnit : selectedUnits) {
@@ -458,24 +491,44 @@ class Camera {
 private:
     Point<float> _position;
     Point<float> _targetPosition;
+    Size<float> _worldSize;
+    Size<float> _viewportSize;
     float _zoom;
     float _targetZoom;
 
+    Point<float> constrainedPosition(Point<float> position, float zoom) {
+        // Keep every edge of the visible rectangle inside the world.  When a
+        // zoomed-out view is larger than the world, center that axis instead.
+        float halfWidth = _viewportSize.width() / (2.0f * zoom);
+        float halfHeight = _viewportSize.height() / (2.0f * zoom);
+        float centerX = _worldSize.width() / 2.0f;
+        float centerY = _worldSize.height() / 2.0f;
+
+        float x = halfWidth >= centerX
+            ? centerX
+            : std::clamp(position.x(), halfWidth, _worldSize.width() - halfWidth);
+        float y = halfHeight >= centerY
+            ? centerY
+            : std::clamp(position.y(), halfHeight, _worldSize.height() - halfHeight);
+        return Point<float>(x, y);
+    }
+
 public:
-    Camera(Point<float> position, float zoom)
-        : _position(position), _targetPosition(position), _zoom(zoom), _targetZoom(zoom) {}
+    Camera(Point<float> position, Size<float> worldSize, float zoom)
+        : _position(position), _targetPosition(position), _worldSize(worldSize),
+          _viewportSize(worldSize), _zoom(zoom), _targetZoom(zoom) {}
 
     void move(float x, float y) {
         // Update only the target; update() smoothly moves the visible camera.
-        _targetPosition = Point<float>(
+        _targetPosition = constrainedPosition(Point<float>(
             _targetPosition.x() + x,
             _targetPosition.y() + y
-        );
+        ), _targetZoom);
     }
 
     void setPosition(Point<float> position) {
         // Used for recentering without snapping the visible camera instantly.
-        _targetPosition = position;
+        _targetPosition = constrainedPosition(position, _targetZoom);
     }
 
     void zoomBy(float factor) {
@@ -489,6 +542,7 @@ public:
         } else if (_targetZoom > maximumZoom) {
             _targetZoom = maximumZoom;
         }
+        _targetPosition = constrainedPosition(_targetPosition, _targetZoom);
     }
 
     float worldUnitsPerScreenUnit() {
@@ -517,6 +571,11 @@ public:
         float nextX = _position.x() + (_targetPosition.x() - _position.x()) * blend;
         float nextY = _position.y() + (_targetPosition.y() - _position.y()) * blend;
         float nextZoom = _zoom + (_targetZoom - _zoom) * blend;
+        Point<float> constrainedNextPosition = constrainedPosition(
+            Point<float>(nextX, nextY), nextZoom
+        );
+        nextX = constrainedNextPosition.x();
+        nextY = constrainedNextPosition.y();
 
         // Snap very small remainders to their targets so animation can finish.
         if (std::fabs(_targetPosition.x() - nextX) < positionThreshold) {
@@ -538,6 +597,10 @@ public:
     }
 
     void apply(Size<float> viewportSize) {
+        _viewportSize = viewportSize;
+        _position = constrainedPosition(_position, _zoom);
+        _targetPosition = constrainedPosition(_targetPosition, _targetZoom);
+
         // Convert the camera center and zoom into the visible world rectangle.
         float halfWidth  = viewportSize.width() / (2.0f * _zoom);
         float halfHeight = viewportSize.height() / (2.0f * _zoom);
@@ -576,14 +639,23 @@ Point<float> selectionBoxEnd(0.0f, 0.0f);
 class WorldConfig {
 public:
     Color backgroundColor;
+    Color outsideColor;
+    Color borderColor;
     float ambientIntensity;
 
-    WorldConfig(Color backgroundColor, float ambientIntensity)
-        : backgroundColor(backgroundColor), ambientIntensity(ambientIntensity) {}
+    WorldConfig(Color backgroundColor, Color outsideColor, Color borderColor,
+                float ambientIntensity)
+        : backgroundColor(backgroundColor), outsideColor(outsideColor),
+          borderColor(borderColor), ambientIntensity(ambientIntensity) {}
 };
 
 WorldConfig loadWorldConfig() {
-    WorldConfig settings(Color(0.05f, 0.10f, 0.20f), 0.25f);
+    WorldConfig settings(
+        Color(0.05f, 0.10f, 0.20f),
+        Color(0.015f, 0.015f, 0.015f),
+        Color(0.35f, 0.55f, 0.75f),
+        0.25f
+    );
     std::ifstream config("world.conf");
     std::string line;
 
@@ -602,7 +674,8 @@ WorldConfig loadWorldConfig() {
                 && ambientIntensity >= 0.0f && ambientIntensity <= 1.0f) {
                 settings.ambientIntensity = ambientIntensity;
             }
-        } else if (setting == "background_color") {
+        } else if (setting == "background_color" || setting == "outside_color"
+                   || setting == "border_color") {
             float red;
             float green;
             float blue;
@@ -610,7 +683,13 @@ WorldConfig loadWorldConfig() {
                 && red >= 0.0f && red <= 1.0f
                 && green >= 0.0f && green <= 1.0f
                 && blue >= 0.0f && blue <= 1.0f) {
-                settings.backgroundColor = Color(red, green, blue);
+                if (setting == "background_color") {
+                    settings.backgroundColor = Color(red, green, blue);
+                } else if (setting == "outside_color") {
+                    settings.outsideColor = Color(red, green, blue);
+                } else {
+                    settings.borderColor = Color(red, green, blue);
+                }
             }
         }
     }
@@ -692,8 +771,10 @@ void drawSelectionBox() {
 void display() {
     // Clear the back buffer, draw the world, then present the completed frame.
     world->clear();
+    world->renderBackground();
     world->renderSelection(selectedUnits);
     world->render();
+    world->renderBorder();
     drawSelectionBox();
     glutSwapBuffers();
 }
@@ -861,6 +942,8 @@ int main(int argc, char** argv) {
     world = new World(
         worldSize,
         worldConfig.backgroundColor,
+        worldConfig.outsideColor,
+        worldConfig.borderColor,
         worldConfig.ambientIntensity
     );
     world->addUnit(Unit(
@@ -895,7 +978,11 @@ int main(int argc, char** argv) {
         Point<float>(
             worldSize.width() / 2.0f, 
             worldSize.height() / 2.0f
-        ), 
+        ),
+        Size<float>(
+            static_cast<float>(worldSize.width()),
+            static_cast<float>(worldSize.height())
+        ),
         1.0f
     );
     
